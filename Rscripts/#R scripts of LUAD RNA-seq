@@ -1,0 +1,837 @@
+#R scripts of LUAD RNA-seq
+R
+library(ballgown)
+library(genefilter)
+library(dplyr)
+library(devtools)
+
+# Load phenotype data from a file we saved in the current working directory
+pheno_data = read.csv("LUAD_vs_Normal.csv")
+
+# Load ballgown data structure and save it to a variable "bg"
+bg = ballgown(samples=as.vector(pheno_data$path), pData=pheno_data)
+
+# Display a description of this object
+bg
+
+# Load all attributes including gene name
+bg_table = texpr(bg, 'all')
+bg_gene_names = unique(bg_table[, 9:10])
+
+# Save the ballgown object to a file for later use
+save(bg, file='bg.rda')
+
+# Perform differential expression (DE) analysis with no filtering
+results_transcripts = stattest(bg, feature="transcript", covariate="type", getFC=TRUE, meas="FPKM")
+
+results_genes = stattest(bg, feature="gene", covariate="type", getFC=TRUE, meas="FPKM")
+
+results_genes = merge(results_genes, bg_gene_names, by.x=c("id"), by.y=c("gene_id"))
+
+# Save a tab delimited file for both the transcript and gene results
+write.table(results_transcripts, "LUAD_vs_Normal_transcript_results.tsv", sep="\t", quote=FALSE, row.names = FALSE)
+write.table(results_genes, "LUAD_vs_Normal_gene_results.tsv", sep="\t", quote=FALSE, row.names = FALSE)
+
+# Filter low-abundance genes. Here we remove all transcripts with a variance across the samples of less than one
+bg_filt = subset (bg,"rowVars(texpr(bg)) > 1", genomesubset=TRUE)
+
+# Load all attributes including gene name
+bg_filt_table = texpr(bg_filt , 'all')
+bg_filt_gene_names = unique(bg_filt_table[, 9:10])
+
+# Perform DE analysis now using the filtered data
+
+results_transcripts = stattest(bg_filt, feature="transcript", covariate="type", getFC=TRUE, meas="FPKM")
+results_genes = stattest(bg_filt, feature="gene", covariate="type", getFC=TRUE, meas="FPKM")
+results_genes = merge(results_genes, bg_filt_gene_names, by.x=c("id"), by.y=c("gene_id"))
+
+# Output the filtered list of genes and transcripts and save to tab delimited files
+write.table(results_transcripts, "LUAD_vs_Normal_transcript_results_filtered.tsv", sep="\t", quote=FALSE, row.names = FALSE)
+write.table(results_genes, "LUAD_vs_Normal_gene_results_filtered.tsv", sep="\t", quote=FALSE, row.names = FALSE)
+
+# Identify the significant genes with p-value < 0.01
+sig_transcripts = subset(results_transcripts, results_transcripts$pval<0.01)
+sig_genes = subset(results_genes, results_genes$pval<0.01)
+
+# Output the signifant gene results to a pair of tab delimited files
+write.table(sig_transcripts, "LUAD_vs_Normal_transcript_results_sig.tsv", sep="\t", quote=FALSE, row.names = FALSE)
+write.table(sig_genes, "LUAD_vs_Normal_gene_results_sig.tsv", sep="\t", quote=FALSE, row.names = FALSE)
+
+# Exit the R session
+quit(save="no")
+
+
+
+
+#Launch R:
+R
+
+#R tutorial for Informatics for RNA-sequence Analysis workshops
+
+#######################
+# Loading Data into R #
+#######################
+
+#Set working directory where output will go
+#working_dir = "$RNA_HOME/de_mydata/htseq_counts"
+#setwd(working_dir)
+
+#Read in gene mapping
+mapping=read.table("/media/data01/deniz/workspace/rnaseq/de_mydata/htseq_counts/ENSG_ID2Name.txt", header=FALSE, stringsAsFactors=FALSE, row.names=1)
+
+# Read in count matrix
+rawdata=read.table("/media/data01/deniz/workspace/rnaseq/expression_mydata/htseq_counts/gene_read_counts_table_all_final.tsv", header=TRUE, stringsAsFactors=FALSE, row.names=1)
+
+# Check dimensions
+dim(rawdata)
+
+# Require at least 25% of samples to have count > 25
+quant <- apply(rawdata,1,quantile,0.75)
+keep <- which((quant >= 25) == 1)
+rawdata <- rawdata[keep,]
+dim(rawdata)
+
+#################
+# Running edgeR #
+#################
+
+# load edgeR
+library('edgeR')
+
+# make class labels
+class <- factor( c( rep("LUAD",6), rep("Normal",6) ))
+
+# Get common gene names
+genes=rownames(rawdata)
+gene_names=mapping[genes,1]
+
+
+# Make DGEList object
+y <- DGEList(counts=rawdata, genes=genes, group=class)
+nrow(y)
+
+# TMM Normalization
+y <- calcNormFactors(y)
+
+# Estimate dispersion
+y <- estimateCommonDisp(y, verbose=TRUE)
+y <- estimateTagwiseDisp(y)
+
+# Differential expression test
+et <- exactTest(y)
+
+# Print top genes
+topTags(et)
+
+# Print number of up/down significant genes at FDR = 0.01  significance level
+summary(de <- decideTestsDGE(et, p=.01))
+detags <- rownames(y)[as.logical(de)]
+
+
+# Output DE genes
+# Matrix of significantly DE genes
+mat <- cbind(
+ genes,gene_names,
+ sprintf('%0.3f',log10(et$table$PValue)),
+ sprintf('%0.3f',et$table$logFC)
+)[as.logical(de),]
+colnames(mat) <- c("Gene", "Gene_Name", "Log10_Pvalue", "Log_fold_change")
+
+# Order by log fold change
+o <- order(et$table$logFC[as.logical(de)],decreasing=TRUE)
+mat <- mat[o,]
+
+# Save table
+write.table(mat, file="DE_genes_LUAD.txt", quote=FALSE, row.names=FALSE, sep="\t")
+
+#To exit R type the following
+quit(save="no")
+
+
+
+
+
+###R code###
+#load libraries
+library(ballgown)
+library(genefilter)
+library(dplyr)
+library(devtools)
+
+#designate output file
+outfile="/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/Ballgown_output.pdf"
+
+###R code###
+# Load phenotype data
+pheno_data = read.csv("LUAD_vs_Normal.csv")
+
+# Display the phenotype data
+pheno_data
+
+# Load the ballgown object from file
+load('bg.rda')
+
+# The load command, loads an R object from a file into memory in our R session.
+# You can use ls() to view the names of variables that have been loaded
+ls()
+
+# Print a summary of the ballgown object
+bg
+
+###R code###
+# Open a PDF file where we will save some plots. We will save all figures and then view the PDF at the end
+pdf(file=outfile)
+
+# Extract FPKM values from the 'bg' object
+fpkm = texpr(bg,meas="FPKM")
+
+# View the last several rows of the FPKM table
+tail(fpkm)
+
+# Transform the FPKM values by adding 1 and convert to a log2 scale
+fpkm = log2(fpkm+1)
+
+# Create boxplots to display summary statistics for the FPKM values for each sample
+boxplot(fpkm,col=as.numeric(as.factor(pheno_data$type))+1,las=2,ylab='log2(FPKM+1)')
+
+# Display the transcript ID for a single row of data
+ballgown::transcriptNames(bg)[224044]
+
+# Display the gene name for a single row of data
+ballgown::geneNames(bg)[224044]
+
+# Create a BoxPlot comparing the expression of a single gene for all replicates of both conditions
+boxplot(fpkm[224044,] ~ pheno_data$type, border=c(2,3), main=paste(ballgown::geneNames(bg)[224044],' : ', ballgown::transcriptNames(bg)[224044]),pch=19, xlab="Type", ylab='log2(FPKM+1)')
+
+# Add the FPKM values for each sample onto the plot
+points(fpkm[224044,] ~ jitter(c(2,2,2,2,2,2,1,1,1,1,1,1)), col=c(2,2,2,2,2,2,1,1,1,1,1,1)+1, pch=16)
+
+# Create a plot of transcript structures observed in each replicate and color transcripts by expression level
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3475321'), sample=c('SRR3475321'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3475322'), sample=c('SRR3475322'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3475375'), sample=c('SRR3475375'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3475376'), sample=c('SRR3475376'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3475377'), sample=c('SRR3475377'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3475379'), sample=c('SRR3475379'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3474721'), sample=c('SRR3474721'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3475322'), sample=c('SRR3475322'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3474723'), sample=c('SRR3474723'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3474725'), sample=c('SRR3474725'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3474729'), sample=c('SRR3474729'))
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('Gene in sample SRR3474730'), sample=c('SRR3474730'))
+
+# Create a plot of transcript structures observed in each replicate and color transcripts by expression level
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('TSPAN6 in all Normal samples'), sample=c('SRR3475321', 'SRR3475322', 'SRR3475375','SRR3475376', 'SRR3475377', 'SRR3475379'), labelTranscripts=TRUE)
+
+plotTranscripts(ballgown::geneIDs(bg)[224044], bg, main=c('TSPAN6 in all LUAD samples'), sample=c('SRR3474721','SRR3474722', 'SRR3474723', 'SRR3474725','SRR3474729', 'SRR3474730'), labelTranscripts=TRUE)
+
+#plotMeans('TSPAN6',bg,groupvar="type",legend=FALSE)
+
+# Close the PDF device where we have been saving our plots
+dev.off()
+
+# Exit the R session
+quit(save="no")
+
+
+###R script###
+#Part3_Supplementary_R.R
+
+#Starting from the output of the RNA-seq Part 1.
+
+#Load libraries
+library(ggplot2)
+library(gplots)
+library(GenomicRanges)
+library(ballgown)
+library(ggrepel)
+
+#Open a pdf device for output of all plots
+pdf(file="Part3_Supplementary_R_output.pdf")
+
+#### Import the gene expression data from the HISAT2/StringTie/Ballgown tutorial
+
+# List the current contents of this directory
+dir()
+
+#Import expression and differential expression results from the HISAT2/StringTie/Ballgown pipeline
+load('bg.rda')
+
+# View a summary of the ballgown object
+bg
+
+# Load gene names for lookup later in the tutorial
+bg_table = texpr(bg, 'all')
+bg_gene_names = unique(bg_table[, 9:10])
+
+# Pull the gene_expression data frame from the ballgown object
+gene_expression = as.data.frame(gexpr(bg))
+
+#Next, you’ll load the data into a R dataframe.
+
+###R code###
+#### Working with 'dataframes'
+#View the first five rows of data (all columns) in one of the dataframes created
+head(gene_expression)
+
+#View the column names
+colnames(gene_expression)
+
+#View the row names
+row.names(gene_expression)
+
+#Determine the dimensions of the dataframe.  'dim()' will return the number of rows and columns
+dim(gene_expression)
+You’ll then get the first 3 rows of data and view expression and transcript information.
+
+###R code###
+#Get the first 6 rows of data and a selection of columns
+gene_expression[1:6,c(1:6,12)]
+
+#Do the same thing, but using the column names instead of numbers
+gene_expression[1:6, c("FPKM.SRR3474721","FPKM.SRR3474722","FPKM.SRR3474723","FPKM.SRR3474725","FPKM.SRR3474729","FPKM.SRR3474730")]
+
+#Assign colors to each.  You can specify color by RGB, Hex code, or name
+#To get a list of color names:
+colours()
+data_colors=c("coral","coral1","coral2","coral3","coral4","chocolate3","aquamarine","aquamarine1","aquamarine2","aquamarine3","aquamarine4","cyan4")
+
+#View expression values for the transcripts of a particular gene symbol of 'AGER'
+#First determine the rows in the data.frame that match 'AGER', aka. ENSG00000204305, then display only those rows of the data.frame
+i = row.names(gene_expression) == "ENSG00000204305"
+gene_expression[i,]
+
+#What if we want to view values for a list of genes of interest all at once?
+#genes_of_interest = c("AGER", "SFTPA2", "SFTPA1", "VEGFD")
+genes_of_interest = c("ENSG00000204305","ENSG00000185303","ENSG00000122852","ENSG00000165197")
+i = which(row.names(gene_expression) %in% genes_of_interest)
+gene_expression[i,]
+
+# Load the transcript to gene index from the ballgown object
+transcript_gene_table = indexes(bg)$t2g
+head(transcript_gene_table)
+
+#Each row of data represents a transcript. Many of these transcripts represent the same gene.Determine the numbers of transcripts and unique genes  
+length(row.names(transcript_gene_table)) #Transcript count
+length(unique(transcript_gene_table[,"g_id"])) #Unique Gene count
+The following code blocks are to generate various plots using the above data set.
+
+###R code###
+#### Plot #1 - the number of transcripts per gene.  
+#Many genes will have only 1 transcript, some genes will have several transcripts
+#Use the 'table()' command to count the number of times each gene symbol occurs (i.e. the # of transcripts that have each gene symbol)
+#Then use the 'hist' command to create a histogram of these counts
+#How many genes have 1 transcript?  More than one transcript?  What is the maximum number of transcripts for a single gene?
+counts=table(transcript_gene_table[,"g_id"])
+c_one = length(which(counts == 1))
+c_more_than_one = length(which(counts > 1))
+c_max = max(counts)
+hist(counts, breaks=50, col="#895796", xlab="Transcripts per gene", main="Distribution of transcript count per gene")
+legend_text = c(paste("Genes with one transcript =", c_one), paste("Genes with more than one transcript =", c_more_than_one), paste("Max transcripts for single gene = ", c_max))
+legend("topright", legend_text, lty=NULL)
+
+#### Plot #2 - the distribution of transcript sizes as a histogram
+#In this analysis we supplied StringTie with transcript models so the lengths will be those of known transcripts
+#However, if we had used a de novo transcript discovery mode, this step would give us some idea of how well transcripts were being assembled
+#If we had a low coverage library, or other problems, we might get short 'transcripts' that are actually only pieces of real transcripts
+
+full_table <- texpr(bg , 'all')
+hist(full_table$length, breaks=50, xlab="Transcript length (bp)", main="Distribution of transcript lengths", col="steelblue")
+
+#### Summarize FPKM values for all 12 replicates
+#What are the minimum and maximum FPKM values for a particular library?
+min(gene_expression[,"FPKM.SRR3474721"])
+max(gene_expression[,"FPKM.SRR3474721"])
+
+#Set the minimum non-zero FPKM values for use later.
+#Do this by grabbing a copy of all data values, coverting 0's to NA, and calculating the minimum or all non NA values
+#zz = fpkm_matrix[,data_columns]
+#zz[zz==0] = NA
+#min_nonzero = min(zz, na.rm=TRUE)
+#min_nonzero
+
+#Alternatively just set min value to 1
+min_nonzero=1
+
+# Set the columns for finding FPKM and create shorter names for figures
+data_columns=c(1:12)
+short_names=c("LUAD21", "LUAD22", "LUAD23", "LUAD25", "LUAD29", "LUAD30", "Normal21", "Normal22", "Normal75", "Normal76", "Normal77", "Normal79")
+
+#### Plot #3 - View the range of values and general distribution of FPKM values for all  libraries
+#Create boxplots for this purpose
+#Display on a log2 scale and add the minimum non-zero value to avoid log2(0)
+boxplot(log2(gene_expression[,data_columns]+min_nonzero), col=data_colors, names=short_names, las=2, ylab="log2(FPKM)", main="Distribution of FPKMs for all 12 libraries")
+#Note that the bold horizontal line on each boxplot is the median
+
+#### Plot #4 - plot a pair of replicates to assess reproducibility of technical replicates
+#Tranform the data by converting to log2 scale after adding an arbitrary small value to avoid log2(0)
+x = gene_expression[,"FPKM.SRR3474721"]
+y = gene_expression[,"FPKM.SRR3474722"]
+plot(x=log2(x+min_nonzero), y=log2(y+min_nonzero), pch=16, col="blue", cex=0.25, xlab="FPKM (LUAD, SRR3474721)", ylab="FPKM (LUAD, SRR3474722)", main="Comparison of expression values for a pair of replicates")
+
+#Add a straight line of slope 1, and intercept 0
+abline(a=0,b=1)
+
+#Calculate the correlation coefficient and display in a legend
+rs=cor(x,y)^2
+legend("topleft", paste("R squared = ", round(rs, digits=3), sep=""), lwd=1, col="black")
+
+#### Plot #5 - Scatter plots with a large number of data points can be misleading ... regenerate this figure as a density scatter plot
+colors = colorRampPalette(c("white", "blue", "#007FFF", "cyan","#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+smoothScatter(x=log2(x+min_nonzero), y=log2(y+min_nonzero), xlab="FPKM (LUAD, SRR3474721)", ylab="FPKM (LUAD, SRR3474722)", main="Comparison of expression values for a pair of replicates", colramp=colors, nbin=200)
+
+#### Plot all sets of replicates on a single plot
+#Create an function that generates an R plot.  This function will take as input the two libraries to be compared and a plot name and color
+plotCor = function(lib1, lib2, name, color){
+    x=gene_expression[,lib1]
+    y=gene_expression[,lib2]
+    zero_count = length(which(x==0)) + length(which(y==0))
+    plot(x=log2(x+min_nonzero), y=log2(y+min_nonzero), pch=16, col=color, cex=0.25, xlab=lib1, ylab=lib2, main=name)
+    abline(a=0,b=1)
+    rs=cor(x,y, method="pearson")^2
+    legend_text = c(paste("R squared = ", round(rs, digits=3), sep=""), paste("Zero count = ", zero_count, sep=""))
+    legend("topleft", legend_text, lwd=c(1,NA), col="black", bg="white", cex=0.8)
+}
+#Open a plotting page with room for two plots on one page
+par(mfrow=c(1,2))
+
+#Plot #6 - Now make a call to our custom function created above, once for each library comparison
+plotCor("FPKM.SRR3474721", "FPKM.SRR3475321", "LUAD21 vs Normal21", "coral2")
+plotCor("FPKM.SRR3474722", "FPKM.SRR3475322", "LUAD22 vs Normal22", "aquamarine2")
+
+
+##### One problem with these plots is that there are so many data points on top of each other, that information is being lost
+#Regenerate these plots using a density scatter plot
+plotCor2 = function(lib1, lib2, name, color){
+    x=gene_expression[,lib1]
+    y=gene_expression[,lib2]
+    zero_count = length(which(x==0)) + length(which(y==0))
+    colors = colorRampPalette(c("white", "blue", "#007FFF", "cyan","#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+    smoothScatter(x=log2(x+min_nonzero), y=log2(y+min_nonzero), xlab=lib1, ylab=lib2, main=name, colramp=colors, nbin=275)
+    abline(a=0,b=1)
+    rs=cor(x,y, method="pearson")^2
+    legend_text = c(paste("R squared = ", round(rs, digits=3), sep=""), paste("Zero count = ", zero_count, sep=""))
+    legend("topleft", legend_text, lwd=c(1,NA), col="black", bg="white", cex=0.8)
+}
+
+#### Plot #7 - Now make a call to our custom function created above, once for each library comparison
+par(mfrow=c(1,2))
+plotCor("FPKM.SRR3474721", "FPKM.SRR3475321", "LUAD21 vs Normal21", "coral2")
+plotCor("FPKM.SRR3474722", "FPKM.SRR3475322", "LUAD22 vs Normal212", "aquamarine2")
+
+
+
+#### Compare the correlation 'distance' between all replicates
+#Do we see the expected pattern for all libraries (i.e. replicates most similar, then tumor vs. normal)?
+
+#Calculate the FPKM sum for all 12 libraries
+gene_expression[,"sum"]=apply(gene_expression[,data_columns], 1, sum)
+
+#Identify the genes with a grand sum FPKM of at least 5 - we will filter out the genes with very low expression across the board
+i = which(gene_expression[,"sum"] > 5)
+
+#Calculate the correlation between all pairs of data
+r=cor(gene_expression[i,data_columns], use="pairwise.complete.obs", method="pearson")
+
+#Print out these correlation values
+r
+
+#### Plot #8 - Convert correlation to 'distance', and use 'multi-dimensional scaling' to display the relative differences between libraries
+#This step calculates 2-dimensional coordinates to plot points for each library
+#Libraries with similar expression patterns (highly correlated to each other) should group together
+#What pattern do we expect to see, given the types of libraries we have (technical replicates, biologal replicates, tumor/normal)?
+d=1-r
+mds=cmdscale(d, k=2, eig=TRUE)
+par(mfrow=c(1,1))
+plot(mds$points, type="n", xlab="", ylab="", main="MDS distance plot (all non-zero genes)", xlim=c(-0.12,0.12), ylim=c(-0.12,0.12))
+points(mds$points[,1], mds$points[,2], col="grey", cex=2, pch=16)
+text(mds$points[,1], mds$points[,2], short_names, col=data_colors)
+
+# Calculate the differential expression results including significance
+results_genes = stattest(bg, feature="gene", covariate="type", getFC=TRUE, meas="FPKM")
+results_genes = merge(results_genes,bg_gene_names,by.x=c("id"),by.y=c("gene_id"))
+
+#### Plot #9 - View the distribution of differential expression values as a histogram
+#Display only those that are significant according to Ballgown
+
+sig=which(results_genes$pval<0.05)
+results_genes[,"de"] = log2(results_genes[,"fc"])
+hist(results_genes[sig,"de"], breaks=50, col="seagreen", xlab="log2(Fold change) LUAD vs Normal", main="Distribution of differential expression values")
+abline(v=-2, col="black", lwd=2, lty=2)
+abline(v=2, col="black", lwd=2, lty=2)
+legend("topleft", "Fold-change > 4", lwd=2, lty=2)
+
+#### Plot #10 - Display the grand expression values from LUAD and Normal and mark those that are significantly differentially expressed
+gene_expression[,"LUAD"]=apply(gene_expression[,c(1:6)], 1, mean)
+gene_expression[,"Norma"]=apply(gene_expression[,c(7:12)], 1, mean)
+
+x=log2(gene_expression[,"LUAD"]+min_nonzero)
+y=log2(gene_expression[,"Normal"]+min_nonzero)
+plot(x=x, y=y, pch=16, cex=0.25, xlab="LUAD FPKM (log2)", ylab="Normal FPKM (log2)", main="LUAD vs Normal FPKMs")
+abline(a=0, b=1)
+xsig=x[sig]
+ysig=y[sig]
+points(x=xsig, y=ysig, col="#ff77aa", pch=16, cex=0.5)
+legend("topleft", "Significant", col="#ff77aa", pch=16)
+
+#Get the gene symbols for the top N (according to corrected p-value) and display them on the plot
+topn = order(abs(results_genes[sig,"fc"]), decreasing=TRUE)[1:25]
+topn = order(results_genes[sig,"qval"])[1:25]
+text(x[topn], y[topn], results_genes[topn,"gene_name"], col="black", cex=0.75, srt=45)
+
+
+#### Write a simple table of differentially expressed transcripts to an output file
+#Each should be significant with a log2 fold-change >= 2
+sigpi = which(results_genes[,"pval"]<0.05)
+sigp = results_genes[sigpi,]
+sigde = which(abs(sigp[,"de"]) >= 2)
+sig_tn_de = sigp[sigde,]
+
+#Order the output by or p-value and then break ties using fold-change
+o = order(sig_tn_de[,"qval"], -abs(sig_tn_de[,"de"]), decreasing=FALSE)
+
+output = sig_tn_de[o,c("gene_name","id","fc","pval","qval","de")]
+write.table(output, file="SigDE_R.txt", sep="\t", row.names=FALSE, quote=FALSE)
+
+#View selected columns of the first 25 lines of output
+output[1:25,c(1,4,5)]
+
+#You can open the file "SigDE.txt" in Excel, Calc, etc.
+#It should have been written to the current working directory that you set at the beginning of the R tutorial
+dir()
+
+
+#### Plot #11 - Create a heatmap to vizualize expression differences between the samples
+#Define custom dist and hclust functions for use with heatmaps
+mydist=function(c) {dist(c,method="euclidian")}
+myclust=function(c) {hclust(c,method="average")}
+
+main_title="sig DE Transcripts"
+par(cex.main=0.8)
+sig_genes_de=sig_tn_de[,"id"]
+sig_gene_names_de=sig_tn_de[,"gene_name"]
+
+data=log2(as.matrix(gene_expression[as.vector(sig_genes_de),data_columns])+1)
+heatmap.2(data, hclustfun=myclust, distfun=mydist, na.rm = TRUE, scale="none", dendrogram="both", margins=c(10,4), Rowv=TRUE, Colv=TRUE, symbreaks=FALSE, key=TRUE, symkey=FALSE, density.info="none", trace="none", main=main_title, cexRow=0.3, cexCol=1, labRow=sig_gene_names_de,col=rev(heat.colors(75)))
+
+#### Plot #12 - Volcano plot
+
+# default all genes to "no change"
+results_genes$diffexpressed <- "No"
+# if log2Foldchange > 2 and pvalue < 0.05, set as "Up regulated"
+results_genes$diffexpressed[results_genes$de > 0.6 & results_genes$pval < 0.05] <- "Up"
+# if log2Foldchange < -2 and pvalue < 0.05, set as "Down regulated"
+results_genes$diffexpressed[results_genes$de < -0.6 & results_genes$pval < 0.05] <- "Down"
+
+results_genes$gene_label <- NA
+# write the gene names of those significantly upregulated/downregulated to a new column
+results_genes$gene_label[results_genes$diffexpressed != "No"] <- results_genes$gene_name[results_genes$diffexpressed != "No"]
+
+ggplot(data=results_genes[results_genes$diffexpressed != "No",], aes(x=de, y=-log10(pval), label=gene_label, color = diffexpressed)) +
+             xlab("log2Foldchange") +
+             scale_color_manual(name = "Differentially expressed", values=c("blue", "red")) +
+             geom_point() +
+             theme_minimal() +
+             geom_text_repel() +
+             geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+             geom_hline(yintercept=-log10(0.05), col="red") +
+             guides(colour = guide_legend(override.aes = list(size=5))) +
+             geom_point(data = results_genes[results_genes$diffexpressed == "No",], aes(x=de, y=-log10(pval)), colour = "black")
+
+
+dev.off()
+#To exit R type:
+quit(save="no")
+
+
+
+#ANNOVAR GSEA
+> system.file()
+#"/usr/lib/R/library/base"
+#cp c7.all.v7.1.entrez.gmt /usr/lib/R/library/base/.
+library(clusterProfiler)
+library(GSEABase)
+library(org.Hs.eg.db)
+filename<- "c7.all.v7.1.entrez.gmt"
+gmtfile <- system.file(filename)
+c6 <- read.gmt(gmtfile)
+yourEntrezIdList<- c(7356,6440,177,51208,8547,729238,653509,200504,25928,219790,27063,2277,6532,55273,55214,7123,157310,2167,186,1580,2266,
+120892,762,153579,361,142683,8436,6362,27074,125,11197,11185,6439,2823,10974,29091,105375355,11170,857,2273,5166,51751,722,7134,2327,
+9806,10203,10268,9254,8685) 
+#USE YOUR OWN ENTREZ GENEID LIST HERE
+ImmunSigEnrich <- enricher(yourEntrezIdList, TERM2GENE=c6, pvalueCutoff = 0.05)
+ImmunSigEnrich <- setReadable(ImmunSigEnrich, OrgDb = org.Hs.eg.db, keyType =
+"ENTREZID")
+write.csv(ImmunSigEnrich,"MyImmunePathwayRelatedGenes.csv")
+goEnrich<-enrichGO(gene= yourEntrezIdList,OrgDb= org.Hs.eg.db, ont=
+"ALL",pAdjustMethod=
+"BH",pvalueCutoff = 0.05,readable= TRUE)
+write.csv(goEnrich,"MyGORelatedGenes.csv")
+keggEnrich<-enrichKEGG(gene= yourEntrezIdList,organism= "hsa",pAdjustMethod="BH",
+pvalueCutoff = 0.05)
+write.csv(keggEnrich,"MyKEGGRelatedGenes.csv")
+
+dev.off()
+#To exit R type:
+quit(save="no")
+
+
+#ANNOVAR GSEA
+> system.file()
+#"/usr/lib/R/library/base"
+#cp c7.all.v7.1.entrez.gmt /usr/lib/R/library/base/.
+library(clusterProfiler)
+library(GSEABase)
+library(org.Hs.eg.db)
+filename<- "c7.all.v7.1.entrez.gmt"
+gmtfile <- system.file(filename)
+c6 <- read.gmt(gmtfile)
+yourEntrezIdList<- c(55092,712,713,8547,54797,6342,115361,54873,1520,6277,2752,5287,1390,653509,3988,1509,3043,322,6157,7356,116071,
+10312,26005,1075,2597,2,65981,6231,217,9724,2353,145781,100820829,7090,4649,4629,9738,8663,728689,113,55720,10627,103910,1938,
+10437,9757,8425,6205,6203,10990,2034,6439,375248,10461,54520,1290,11034,10398,1522,421,23523,6525,6122,2771,84864,125,57587,
+4338,27292,3074,5066,972,1843,177)
+
+#USE YOUR OWN ENTREZ GENEID LIST HERE
+ImmunSigEnrich <- enricher(yourEntrezIdList, TERM2GENE=c6, pvalueCutoff = 0.05)
+ImmunSigEnrich <- setReadable(ImmunSigEnrich, OrgDb = org.Hs.eg.db, keyType =
+"ENTREZID")
+write.csv(ImmunSigEnrich,"MyImmunePathwayRelatedAnnovarGenes.csv")
+goEnrich<-enrichGO(gene= yourEntrezIdList,OrgDb= org.Hs.eg.db, ont=
+"ALL",pAdjustMethod=
+"BH",pvalueCutoff = 0.05,readable= TRUE)
+write.csv(goEnrich,"MyGORelatedAnnovarGenes.csv")
+keggEnrich<-enrichKEGG(gene= yourEntrezIdList,organism= "hsa",pAdjustMethod="BH",
+pvalueCutoff = 0.05)
+write.csv(keggEnrich,"MyKEGGRelatedAnnovarGenes.csv")
+
+dev.off()
+#To exit R type:
+quit(save="no")
+
+
+#Install and load required packages
+library(clusterProfiler)
+library(enrichplot)
+library(ggplot2)
+
+#Annotations
+# SET THE DESIRED ORGANISM HERE
+organism = "org.Hs.eg.db"
+library(organism, character.only = TRUE)
+
+##Prepare Input
+# reading in data from ballgown
+df = read.csv("LUAD_vs_Normal_gene_results_sig.csv", header=TRUE, sep="\t")
+
+# we want the log2 fold change
+original_gene_list <- df$fc
+
+# name the vector
+names(original_gene_list) <- df$id
+
+# omit any NA values
+gene_list<-na.omit(original_gene_list)
+
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+#Gene Set Enrichment
+gse <- gseGO(geneList=gene_list,
+             ont ="ALL",
+             keyType = "ENSEMBL",
+             nPerm = 10000,
+             minGSSize = 3,
+             maxGSSize = 800,
+             pvalueCutoff = 0.05,
+             verbose = TRUE,
+             OrgDb = organism,
+             pAdjustMethod = "none")
+
+
+
+###Output
+require(DOSE)
+
+##Dotplot
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/dotplot.pdf"
+pdf(file=outfile)
+dotplot <- dotplot(gse, showCategory=10, split=".sign") + facet_grid(.~.sign)
+plot(dotplot)
+dev.off()
+
+
+##Encrichment Map
+#Enrichment map organizes enriched terms into a network with edges connecting overlapping gene sets. In this way, mutually overlapping gene sets are tend to cluster together, making it easy to identify functional modules.
+
+x2 <- pairwise_termsim(gse)
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/emapplot.pdf"
+pdf(file=outfile)
+emapplot <- emapplot(x2, showCategory = 10)
+plot(emapplot)
+dev.off()
+
+
+##Category Netplot
+#The cnetplot depicts the linkages of genes and biological concepts (e.g. GO terms or KEGG pathways) as a network (helpful to see which genes are involved in enriched pathways and genes that may belong to multiple annotation categories).
+
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/cnetplot.pdf"
+pdf(file=outfile)
+#cnetplot(gse, categorySize="pvalue", foldChange=gene_list, showCategory = 3)
+cnetplot <- cnetplot(gse, categorySize="pvalue", foldChange=gene_list, showCategory = 3)
+plot(cnetplot)
+dev.off()
+
+
+##Ridgeplot
+#Grouped by gene set, density plots are generated by using the frequency of fold change values per gene within each set. Helpful to interpret up/down-regulated pathways.
+
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/ridgeplot.pdf"
+pdf(file=outfile)
+ridgeplot <- ridgeplot(gse) + labs(x = "enrichment distribution")
+plot(ridgeplot)
+dev.off()
+
+
+##GSEA Plot
+#Plot of the Running Enrichment Score (green line) for a gene set as the analysis walks down the ranked gene list, including the location of the maximum enrichment score (the red line). The black lines in the Running Enrichment Score show where the members of the gene set appear in the ranked list of genes, indicating the leading edge subset.#
+#The Ranked list metric shows the value of the ranking metric (log2 fold change) as you move down the list of ranked genes. The ranking metric measures a gene’s correlation with a phenotype.#
+#Params:
+#Gene Set Integer. Corresponds to gene set in the gse object. The first gene set is 1, second gene set is 2, etc.
+
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/gseaplot.pdf"
+pdf(file=outfile)
+gseaplot <- gseaplot(gse, by = "all", title = gse$Description[1], geneSetID = 1)
+plot(gseaplot)
+dev.off()
+
+
+#PubMed trend of enriched terms
+#Plots the number/proportion of publications trend based on the query result from PubMed Central.
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/pmcplot.pdf"
+pdf(file=outfile)
+pmcplot <- pmcplot(terms, 2010:2018, proportion=FALSE)
+plot(pmcplot)
+dev.off()
+
+
+
+
+##KEGG Gene Set Enrichment Analysis
+#For KEGG pathway enrichment using the gseKEGG() function, we need to convert id types. We can use the bitr function for this (included in clusterProfiler). It is normal for this call to produce some messages / warnings.
+#In the bitr function, the param fromType should be the same as keyType from the gseGO function above (the annotation source). This param is used again in the next two steps: creating dedup_ids and df2.
+#toType in the bitr function has to be one of the available options from keyTypes(org.Dm.eg.db) and must map to one of ‘kegg’, ‘ncbi-geneid’, ‘ncib-proteinid’ or ‘uniprot’ because gseKEGG() only accepts one of these 4 options as it’s keytype parameter. In the case of org.Dm.eg.db, none of those 4 types are available, but ‘ENTREZID’ are the same as ncbi-geneid for org.Dm.eg.db so we use this for toType.
+
+#As our intial input, we use original_gene_list which we created above.
+
+##Create gseKEGG object
+#organism KEGG Organism Code: The full list is here: https://www.genome.jp/kegg/catalog/org_list.html (need the 3 letter code). I define this as kegg_organism first, because it is used again below when making the pathview plots.
+#nPerm the higher the number of permutations you set, the more accurate your result will, but the longer the analysis will take.
+#minGSSize minimum number of genes in set (gene sets with lower than this many genes in your dataset will be ignored).
+#maxGSSize maximum number of genes in set (gene sets with greater than this many genes in your dataset will be ignored).
+#pvalueCutoff pvalue Cutoff.
+#pAdjustMethod one of “holm”, “hochberg”, “hommel”, “bonferroni”, “BH”, “BY”, “fdr”, “none”.
+#keyType one of ‘kegg’, ‘ncbi-geneid’, ‘ncib-proteinid’ or ‘uniprot’.
+
+
+
+#PREPARE INPUT
+# Convert gene IDs for gseKEGG function
+# We will lose some genes here because not all IDs will be converted
+ids<-bitr(names(original_gene_list), fromType = "ENSEMBL", toType = "ENTREZID", OrgDb=organism)
+ # remove duplicate IDS (here I use "ENSEMBL", but it should be whatever was selected as keyType)
+dedup_ids = ids[!duplicated(ids[c("ENSEMBL")]),]
+
+# Create a new dataframe df2 which has only the genes which were successfully mapped using the bitr function above
+df2 = df[df$id %in% dedup_ids$ENSEMBL,]
+
+# Create a new column in df2 with the corresponding ENTREZ IDs
+df2$Y = dedup_ids$ENTREZID
+
+# Create a vector of the gene unuiverse
+kegg_gene_list <- df2$fc
+
+# Name vector with ENTREZ ids
+names(kegg_gene_list) <- df2$Y
+
+# omit any NA values 
+kegg_gene_list<-na.omit(kegg_gene_list)
+
+# sort the list in decreasing order (required for clusterProfiler)
+kegg_gene_list = sort(kegg_gene_list, decreasing = TRUE)
+
+
+kegg_organism = "hsa"
+kk2 <- gseKEGG(geneList     = kegg_gene_list,
+               organism     = kegg_organism,
+               nPerm        = 10000,
+               minGSSize    = 3,
+               maxGSSize    = 800,
+               pvalueCutoff = 0.05,
+               pAdjustMethod = "none",
+               keyType       = "ncbi-geneid")
+
+
+#Dotplot
+dotplot(kk2, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+
+
+#Encrichment map:
+#Enrichment map organizes enriched terms into a network with edges connecting overlapping gene sets. In this way, mutually overlapping gene sets are tend to cluster together, making it easy to identify functional modules.
+
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/dotplot_enc.pdf"
+pdf(file=outfile)
+dotplot_enc <- dotplot(kk2, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+plot(dotplot_enc)
+dev.off()
+
+
+#Category Netplot
+#The cnetplot depicts the linkages of genes and biological concepts (e.g. GO terms or KEGG pathways) as a network (helpful to see which genes are involved in enriched pathways and genes that may belong to multiple annotation categories).
+kk2_new <- pairwise_termsim(kk2)
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/emapplot_enc.pdf"
+pdf(file=outfile)
+emapplot_enc <- emapplot(kk2_new)
+plot(emapplot_enc)
+dev.off()
+
+
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/cnetplot_enc.pdf"
+pdf(file=outfile)
+cnetplot_enc <- cnetplot(kk2, categorySize="pvalue", foldChange=gene_list)
+plot(cnetplot_enc)
+dev.off()
+
+Ridgeplot
+#Helpful to interpret up/down-regulated pathways.
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/ridgeplot_enc.pdf"
+pdf(file=outfile)
+ridgeplot_enc <- ridgeplot(kk2) + labs(x = "enrichment distribution")
+plot(ridgeplot_enc)
+dev.off()
+
+#GSEA Plot
+#Params:Gene Set Integer. Corresponds to gene set in the gse object. The first gene set is 1, second gene set is 2, etc. Default: 1
+outfile = "/media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/gseaplot_enc.pdf"
+pdf(file=outfile)
+gseaplot_enc <- gseaplot(kk2, by = "all", title = kk2$Description[1], geneSetID = 1)
+plot(gseaplot_enc)
+dev.off()
+
+
+#Pathview
+#This will create a PNG and different PDF of the enriched KEGG pathway.
+#Params:gene.data This is kegg_gene_list created above
+pathway.id The user needs to enter this. Enriched pathways + the pathway ID are provided in the gseKEGG output table (above).
+species Same as organism above in gseKEGG, which we defined as kegg_organism#
+
+library(pathview)
+kk2"hsa05219" "hsa04080" "hsa03060" "hsa04060"library(pathview)
+hsa <- pathview(gene.data=kegg_gene_list, pathway.id="hsa05219", species = kegg_organism)
+hsa2 <- pathview(gene.data=kegg_gene_list, pathway.id="hsa04080", species = kegg_organism)
+hsa3 <- pathview(gene.data=kegg_gene_list, pathway.id="hsa03060", species = kegg_organism)
+hsa4 <- pathview(gene.data=kegg_gene_list, pathway.id="hsa04060", species = kegg_organism)
+
+
+
+
+

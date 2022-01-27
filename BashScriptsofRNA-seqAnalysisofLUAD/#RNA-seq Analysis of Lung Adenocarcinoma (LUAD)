@@ -1,0 +1,528 @@
+#RNA-seq Analysis of Lung Adenocarcinoma (LUAD)
+#The raw RNA-seq data used in this work were provided by Djureinovic et al. under the following accession numbers: PRJNA320473; and GEO: GSE81089 (https://www.ncbi.nlm.nih.gov//geo/query/acc.cgi?acc=GSE81089).
+#During the RNA-seq analysis, we generally follow the Griffith lab tutorial (https://github.com/griffithlab/rnaseq_tutorial)
+
+#Setting up the environment from the griffithlab/rnaseq_tutorial (https://github.com/griffithlab/rnaseq_tutorial)
+#Create a working directory and set the 'RNA_HOME' environment variable
+mkdir -p ~/workspace/rnaseq/
+export RNA_HOME=~/workspace/rnaseq
+echo $RNA_HOME
+# Environment variables used throughout this analysis
+export RNA_HOME=~/workspace/rnaseq
+export RNA_EXT_DATA_DIR=/home/ubuntu/CourseData/RNA_data
+export RNA_DATA_DIR=$RNA_HOME/data
+export RNA_DATA_TRIM_DIR=$RNA_DATA_DIR/trimmed
+export RNA_REFS_DIR=$RNA_HOME/refs
+export RNA_REF_INDEX=$RNA_REFS_DIR/chr22_with_ERCC92
+export RNA_REF_FASTA=$RNA_REF_INDEX.fa
+export RNA_REF_GTF=$RNA_REF_INDEX.gtf
+export RNA_ALIGN_DIR=$RNA_HOME/alignments/hisat2
+#The env command shows all environment variables currently defined and the grep command identifies string matches.
+env | grep RNA
+## Installation
+#Set up tool installation location:
+cd $RNA_HOME
+mkdir student_tools
+cd student_tools
+#SAMtools
+cd $RNA_HOME/student_tools/
+wget https://github.com/samtools/samtools/releases/download/1.9/samtools-1.9.tar.bz2
+bunzip2 samtools-1.9.tar.bz2
+tar -xvf samtools-1.9.tar
+cd samtools-1.9
+make
+./samtools
+# bam-readcount
+cd $RNA_HOME/student_tools/
+export SAMTOOLS_ROOT=$RNA_HOME/student_tools/samtools-1.9
+git clone https://github.com/genome/bam-readcount.git
+cd bam-readcount
+cmake -Wno-dev $RNA_HOME/student_tools/bam-readcount
+make
+./bin/bam-readcount
+# HISAT2
+cd $RNA_HOME/student_tools/
+wget ftp://ftp.ccb.jhu.edu/pub/infphilo/hisat2/downloads/hisat2-2.1.0-Linux_x86_64.zip
+unzip hisat2-2.1.0-Linux_x86_64.zip
+cd hisat2-2.1.0
+./hisat2
+# StringTie
+cd $RNA_HOME/student_tools/
+wget http://ccb.jhu.edu/software/stringtie/dl/stringtie-1.3.4d.Linux_x86_64.tar.gz
+tar -xzvf stringtie-1.3.4d.Linux_x86_64.tar.gz
+cd stringtie-1.3.4d.Linux_x86_64
+./stringtie
+#gffcompare
+cd $RNA_HOME/student_tools/
+wget http://ccb.jhu.edu/software/stringtie/dl/gffcompare-0.10.6.Linux_x86_64.tar.gz
+tar -xzvf gffcompare-0.10.6.Linux_x86_64.tar.gz
+cd gffcompare-0.10.6.Linux_x86_64
+./gffcompare
+# htseq-count
+cd $RNA_HOME/student_tools/
+wget https://github.com/simon-anders/htseq/archive/release_0.11.0.tar.gz
+tar -zxvf release_0.11.0.tar.gz
+cd htseq-release_0.11.0/
+python setup.py install --user
+chmod +x scripts/htseq-count
+./scripts/htseq-count
+# TopHat
+cd $RNA_HOME/student_tools/
+wget https://ccb.jhu.edu/software/tophat/downloads/tophat-2.1.1.Linux_x86_64.tar.gz
+tar -zxvf tophat-2.1.1.Linux_x86_64.tar.gz
+cd tophat-2.1.1.Linux_x86_64/
+./gtf_to_fasta
+#kallisto
+cd $RNA_HOME/student_tools/
+wget https://github.com/pachterlab/kallisto/releases/download/v0.44.0/kallisto_linux-v0.44.0.tar.gz
+tar -zxvf kallisto_linux-v0.44.0.tar.gz
+cd kallisto_linux-v0.44.0/
+./kallisto
+
+# FastQC
+cd $RNA_HOME/student_tools/
+wget https://www.bioinformatics.babraham.ac.uk/projects/fastqc/fastqc_v0.11.8.zip --no-check-certificate
+unzip fastqc_v0.11.8.zip
+cd FastQC/
+chmod 755 fastqc
+./fastqc –help
+# MultiQC
+pip3 install multiqc
+multiqc --help
+Picard
+cd $RNA_HOME/student_tools/
+wget https://github.com/broadinstitute/picard/releases/download/2.18.15/picard.jar -O picard.jar
+java -jar $RNA_HOME/student_tools/picard.jar
+# Flexbar
+cd $RNA_HOME/student_tools/
+wget https://github.com/seqan/flexbar/releases/download/v3.4.0/flexbar-3.4.0-linux.tar.gz
+tar -xzvf flexbar-3.4.0-linux.tar.gz
+cd flexbar-3.4.0-linux/
+export LD_LIBRARY_PATH=$RNA_HOME/student_tools/flexbar-3.4.0-linux:$LD_LIBRARY_PATH
+./flexbar
+# Regtools
+cd $RNA_HOME/student_tools/
+git clone https://github.com/griffithlab/regtools
+cd regtools/
+mkdir build
+cd build/
+cmake ..
+make
+./regtools
+#RSeQC
+pip install RSeQC
+read_GC.py
+# Download and install the latest SRA toolkit
+ wget ‘https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/current/sratoolkit.current-ubuntu64.tar.gz’
+# Download the selected samples raw data with their  SRR accession using sratoolkit
+pwd
+>/media/data01/deniz/workspace/rnaseq/raw_data
+../student_tools/sratoolkit.2.11.2-ubuntu64/bin/fastq-dump SRR3474729
+# Run the fastqc tool before trimming
+nohup ../student_tools/FastQC/fastqc *.fastq &
+# Secure copy the fastqc reports of all samples  from bioinfo05 server to desktop
+scp deniz@bioinfo05.mu.edu.tr:/media/data01/deniz/workspace/rnaseq/raw_data/*_fastqc.html .
+# Running MultiQC tool for all the samples before trimming
+multiqc data/*_fastqc.zip
+# Secure copy the multiqc report from bioinfo05 server to desktop
+scp deniz@bioinfo05.mu.edu.tr:/media/data01/deniz/workspace/rnaseq/raw_data/multiqc_report.html .
+
+#Make a new directory for trimmed data and download adaptor fasta file
+mkdir trim_data
+wget http://genomedata.org/rnaseq-tutorial/illumina_multiplex.fa
+# Trim and remove adapters from the samples
+nohup ../student_tools/flexbar-3.4.0-linux/flexbar --adapter-min-overlap 7 --adapter-trim-end RIGHT --adapters ./illumina_multiplex.fa --pre-trim-left 13 --max-uncalled 300 --min-read-length 25 --threads 8 --zip-output GZ --reads ./SRR3474722_1.fastq --reads2 ./SRR3474722_2.fastq --target ./trim_data/SRR3474722 &
+# Run the fastqc tool for  trimmed reads
+nohup ../student_tools/FastQC/fastqc  *.fastq &
+# Secure copy the fastqc reports of all samples  from bioinfo05 server to desktop
+scp deniz@bioinfo05.mu.edu.tr:/media/data01/deniz/workspace/rnaseq/raw_data/*_fastqc.html .
+deniz@bioinfo05.mu.edu.tr:/media/data01/deniz/workspace/rnaseq/raw_data/trim_data/*_fastqc.html .
+# Running MultiQC tool for all the trimmed samples
+multiqc  *_fastqc.zip 
+
+#HISAT2 alignment
+#Perform alignments with HISAT2 to the genome and transcriptome.
+#First, begin by making the appropriate output directory for our alignment results.
+
+echo $RNA_ALIGN_DIR
+mkdir -p $RNA_ALIGN_DIR
+cd $RNA_ALIGN_DIR
+
+#Tumors
+nohup hisat2 -p 8 --rg-id=SRR3474723 --rg SM:SRR3474723 --rg LB:SRR3474723 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3474723.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3474723_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3474723_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3474723.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3474722 --rg SM:SRR3474722 --rg LB:SRR3474722 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3474722.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3474722_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3474722_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3474722.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3474721 --rg SM:SRR3474721 --rg LB:SRR3474721 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3474721.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3474721_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3474721_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3474721.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3474725 --rg SM:SRR3474725 --rg LB:SRR3474725 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3474725.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3474725_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3474725_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3474725.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3474729 --rg SM:SRR3474729 --rg LB:SRR3474729 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3474729.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3474729_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3474729_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3474729.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3474730 --rg SM:SRR3474730 --rg LB:SRR3474730 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3474730.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3474730_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3474730_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3474730.sam &
+
+#Normals
+nohup hisat2 -p 8 --rg-id=SRR3475321 --rg SM:SRR3475321 --rg LB:SRR3475321 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3475321.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3475321_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3475321_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3475321.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3475322 --rg SM:SRR3475322 --rg LB:SRR3475322 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3475322.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3475322_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3475322_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3475322.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3475376 --rg SM:SRR3475376 --rg LB:SRR3475376 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3475376.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3475376_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3475376_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3475376.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3475377 --rg SM:SRR3475377 --rg LB:SRR3475377 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3475377.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3475377_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3475377_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3475377.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3475379 --rg SM:SRR3475379 --rg LB:SRR3475379 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3475379.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3475379_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3475379_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3475379.sam &
+
+nohup hisat2 -p 8 --rg-id=SRR3475375 --rg SM:SRR3475375 --rg LB:SRR3475375 --rg PL:ILLUMINA --rg PU:CXX1234-ACTGAC.1 --summary-file $RNA_ALIGN_DIR/SRR3475375.txt -x $RNA_REF_INDEX_MY_DATA --dta --rna-strandness RF -1 $RNA_MY_DATA_TRIMMED/SRR3475375_1.fastq.gz -2 $RNA_MY_DATA_TRIMMED/SRR3475375_2.fastq.gz -S $RNA_ALIGN_DIR/SRR3475375.sam &
+
+#Secure copy .txt files
+scp deniz@bioinfo05.mu.edu.tr:/media/data01/deniz/workspace/rnaseq/alignments/hisat2/*.txt .
+
+
+#Index all bam files via samtools index 
+echo $RNA_ALIGN_DIR
+cd $RNA_ALIGN_DIR
+find *.bam -exec echo samtools index {} \; | sh
+
+cd $RNA_HOME
+mkdir bam_readcount_mydata
+cd bam_readcount_mydata
+
+echo $RNA_REF_INDEX_MY_DATA
+samtools faidx $RNA_REF_INDEX_MY_DATA
+
+#SAM to BAM Conversion
+nohup samtools sort -@ 8 -o SRR3474723.bam SRR3474723.sam &
+nohup samtools sort -@ 8 -o SRR3474722.bam SRR3474722.sam &
+nohup samtools sort -@ 8 -o SRR3474721.bam SRR3474721.sam &
+nohup samtools sort -@ 8 -o SRR3474725.bam SRR3474725.sam &
+nohup samtools sort -@ 8 -o SRR3474729.bam SRR3474729.sam &
+nohup samtools sort -@ 8 -o SRR3474730.bam SRR3474730.sam &
+
+nohup samtools sort -@ 8 -o SRR3475321.bam SRR3475321.sam &
+nohup samtools sort -@ 8 -o SRR3475322.bam SRR3475322.sam &
+nohup samtools sort -@ 8 -o SRR3475376.bam SRR3475376.sam &
+nohup samtools sort -@ 8 -o SRR3475377.bam SRR3475377.sam &
+nohup samtools sort -@ 8 -o SRR3475379.bam SRR3475379.sam &
+nohup samtools sort -@ 8 -o SRR3475375.bam SRR3475375.sam &
+
+#Merge HISAT2 BAM files
+cd $RNA_HOME/alignments/hisat2
+java -Xmx2g -jar $RNA_HOME/student_tools/picard.jar MergeSamFiles OUTPUT=LUAD.bam INPUT=SRR3474722.bam INPUT=SRR3474723.bam INPUT=SRR3474721.bam INPUT=SRR3474725.bam INPUT=SRR3474729.bam INPUT=SRR3474730.bam
+
+nohup java -Xmx2g -jar $RNA_HOME/student_tools/picard.jar MergeSamFiles OUTPUT=Normal.bam INPUT=SRR3475321.bam INPUT=SRR3475322.bam INPUT=SRR3475376.bam INPUT=SRR3475377.bam INPUT=SRR3475379.bam INPUT=SRR3475375.bam &
+
+#Count the alignment (BAM) files to make sure all were created successfully (you should have 12 total)
+ls -l *.bam | wc -l
+ls -l *.bam
+
+#Post-Alignment QC
+#Use samtools and FastQC to evaluate the alignments
+#Use samtools view to see the format of a SAM/BAM alignment file
+
+cd $RNA_ALIGN_DIR
+/media/data01/deniz/workspace/rnaseq/alignments/hisat2
+samtools view -H LUAD.bam
+samtools view LUAD.bam | head
+samtools view Normal.bam | head
+
+#Try requiring that alignments are 'paired' and 'mapped in a proper pair' (=3). Also filter out alignments that are 'unmapped', the 'mate is unmapped', and #'not primary alignment' (=268)
+samtools view -f 3 -F 268 LUAD.bam | head
+
+#Now require that the alignments be only for 'PCR or optical duplicate'. How many reads meet this criteria? Why?
+samtools view -f 1024 LUAD.bam | head
+
+#Use samtools flagstat to get a basic summary of an alignment.
+cd $RNA_ALIGN_DIR
+samtools flagstat LUAD.bam > LUAD.flagstat.txt
+samtools flagstat Normal.bam > Normal.flagstat.txt
+
+# Run the fastqc tool after alignment
+fastqc SRR*.bam 
+
+# Secure copy the fastqc reports of all samples from bioinfo05 server to desktop 
+scp deniz@bioinfo05.mu.edu.tr:/media/data01/deniz/workspace/rnaseq/alignments/hisat2/*_fastqc.html . 
+
+# Running MultiQC tool for all the samples after alignment
+multiqc ./*_fastqc.zip .
+
+# Secure copy the multiqc report from bioinfo05 server to desktop 
+scp deniz@bioinfo05.mu.edu.tr:/media/data01/deniz/workspace/rnaseq/alignments/hisat2/multiqc_report.html .
+
+
+###Expression
+cd $RNA_HOME/
+mkdir expression_mydata
+mkdir stringtie_mydata
+mkdir ref_only_mydata
+
+cd expression_mydata/stringtie_mydata/ref_only_mydata
+#LUAD samples
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3474722/transcripts.gtf -A SRR3474722/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3474722.bam & 
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3474723/transcripts.gtf -A SRR3474723/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3474723.bam & 
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3474721/transcripts.gtf -A SRR3474721/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3474721.bam &
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3474729/transcripts.gtf -A SRR3474729/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3474729.bam &
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3474730/transcripts.gtf -A SRR3474730/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3474730.bam &
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3474725/transcripts.gtf -A SRR3474725/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3474725.bam &
+
+#Normal samples
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3475321/transcripts.gtf -A SRR3475321/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3475321.bam &
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3475322/transcripts.gtf -A SRR3475322/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3475322.bam &
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3475376/transcripts.gtf -A SRR3475376/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3475376.bam &
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3475377/transcripts.gtf -A SRR3475377/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3475377.bam &
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3475379/transcripts.gtf -A SRR3475379/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3475379.bam &
+nohup stringtie -p 8 -G $RNA_REF_MY_DATA_GTF -e -B -o SRR3475375/transcripts.gtf -A SRR3475375/gene_abundances.tsv $RNA_ALIGN_DIR/SRR3475375.bam &
+
+
+awk '{if ($3=="transcript") print}' SRR3475377/transcripts.gtf | cut -f 1,4,9 | less
+less -S t_data.ctab
+#Limit the view to transcript records and their expression values (FPKM and TPM values)
+
+#Gene and transcript level expression values can also be viewed in these two files:
+less -S SRR3475376/t_data.ctab
+less -S SRR3475376/gene_abundances.tsv
+
+#Create a tidy expression matrix files for the StringTie results. This will be done at both the gene and transcript level and also will take into account the various expression measures produced: coverage, FPKM, and TPM.
+cd $RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata
+
+wget https://raw.githubusercontent.com/griffithlab/rnaseq_tutorial/master/scripts/stringtie_expression_matrix.pl
+chmod +x stringtie_expression_matrix.pl
+
+./stringtie_expression_matrix.pl --expression_metric=TPM --result_dirs='SRR3474722,SRR3474723,SRR3474721,SRR3474729,SRR3474730,SRR3474725,SRR3475321,SRR3475322,SRR3475376,SRR3475377,SRR3475379,SRR3475375' --transcript_matrix_file=transcript_tpm_all_samples.tsv --gene_matrix_file=gene_tpm_all_samples.tsv
+
+./stringtie_expression_matrix.pl --expression_metric=FPKM --result_dirs='SRR3474722,SRR3474723,SRR3474721,SRR3474729,SRR3474730,SRR3474725,SRR3475321,SRR3475322,SRR3475376,SRR3475377,SRR3475379,SRR3475375' --transcript_matrix_file=transcript_fpkm_all_samples.tsv --gene_matrix_file=gene_fpkm_all_samples.tsv
+
+./stringtie_expression_matrix.pl --expression_metric=Coverage --result_dirs='SRR3474722,SRR3474723,SRR3474721,SRR3474729,SRR3474730,SRR3474725,SRR3475321,SRR3475322,SRR3475376,SRR3475377,SRR3475379,SRR3475375' --transcript_matrix_file=transcript_coverage_all_samples.tsv --gene_matrix_file=gene_coverage_all_samples.tsv
+
+head transcript_tpm_all_samples.tsv gene_tpm_all_samples.tsv
+
+#HTSEQ-COUNT
+#Run htseq-count on alignments instead to produce raw counts instead of FPKM/TPM values for differential expression analysis
+
+cd $RNA_HOME/expression_mydata/htseq_counts/
+#LUAD samples
+htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/UHR_Rep1.bam $RNA_REF_GTF > UHR_Rep1_gene.tsv
+
+htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3474722.bam $RNA_REF_MY_DATA_GTF > SRR3474722_gene.tsv 
+
+htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3474723.bam $RNA_REF_MY_DATA_GTF > SRR3474723_gene.tsv 
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3474721.bam $RNA_REF_MY_DATA_GTF > SRR3474721_gene.tsv &
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3474729.bam $RNA_REF_MY_DATA_GTF > SRR3474729_gene.tsv &
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3474730.bam $RNA_REF_MY_DATA_GTF > SRR3474730_gene.tsv &
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3474725.bam $RNA_REF_MY_DATA_GTF > SRR3474725_gene.tsv &
+
+#Normal samples
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3475321.bam $RNA_REF_MY_DATA_GTF > SRR3475321_gene.tsv &
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3475322.bam $RNA_REF_MY_DATA_GTF > SRR3475322_gene.tsv &
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3475375.bam $RNA_REF_MY_DATA_GTF > SRR3475375_gene.tsv &
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3475376.bam $RNA_REF_MY_DATA_GTF > SRR3475376_gene.tsv &
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3475377.bam $RNA_REF_MY_DATA_GTF > SRR3475377_gene.tsv &
+
+nohup htseq-count --format bam --order pos --mode union --stranded reverse --minaqual 1 --type exon --idattr gene_id $RNA_ALIGN_DIR/SRR3475379.bam $RNA_REF_MY_DATA_GTF > SRR3475379_gene.tsv &
+
+
+#Merge results files into a single matrix for use in edgeR. The following joins the results for each replicate together, adds a header, reformats the result as a tab delimited file, and shows you the first 10 lines of the resulting file :
+
+cd $RNA_HOME/expression_mydata/htseq_counts/
+join SRR3474721_gene.tsv SRR3474722_gene.tsv | join - SRR3474723_gene.tsv | join - SRR3474725_gene.tsv | join - SRR3474729_gene.tsv | join - SRR3474730_gene.tsv | join - SRR3475321_gene.tsv | join - SRR3475322_gene.tsv | join - SRR3475375_gene.tsv | join - SRR3475376_gene.tsv | join - SRR3475377_gene.tsv | join - SRR3475379_gene.tsv > gene_read_counts_table_all.tsv
+
+echo "GeneID LUAD21 LUAD22 LUAD23 LUAD25 LUAD29 LUAD30 Normal21 Normal22 Normal75 Normal76 Normal77 Normal79 " > header.txt
+
+cat header.txt gene_read_counts_table_all.tsv | grep -v "__" | perl -ne 'chomp $_; $_ =~ s/\s+/\t/g; print "$_\n"' > gene_read_counts_table_all_final.tsv
+rm -f gene_read_counts_table_all.tsv header.txt
+head gene_read_counts_table_all_final.tsv
+
+#-grep -v "__" is being used to filter out the summary lines at the end of the files that ht-seq count gives to summarize reads that had no feature, were ambiguous, did not align at all, did not align due to poor alignment quality, or the alignment was not unique.
+
+#-awk -v OFS="\t" '$1=$1' is using awk to replace the single space characters that were in the concatenated version of our header.txt and gene_read_counts_table_all.tsv with a tab character. -v is used to reset the variable OFS, which stands for Output Field Separator. By default, this is a single space. By specifying OFS="\t", we are telling awk to replace the single space with a tab. The '$1=$1' tells awk to reevaluate the input using the new output variable.
+
+#Differential Expression
+#Ballgown DE Analyis
+#Use Ballgown to compare the tumor and normal conditions.
+
+cd $RNA_HOME/de_mydata/ballgown/ref_only/
+
+#Perform LUAD vs. Normal comparison, using all replicates, for known (reference only mode) transcripts:
+#First create a file that lists our 12 expression files, then view that file, then start an R session where we will examine these results:
+
+printf "\"ids\",\"type\",\"path\"\n\"SRR3474721\",\"LUAD\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3474721\"\n\"SRR3474722\",\"LUAD\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3474722\"\n\"SRR3474723\",\"LUAD\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3474723\"\n\"SRR3474725\",\"LUAD\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3474725\"\n\"SRR3474729\",\"LUAD\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3474729\"\n\"SRR3474730\",\"LUAD\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3474730\"\n\"SRR3475321\",\"Normal\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3475321\"\n\"SRR3475322\",\"Normal\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3475322\"\n\"SRR3475376\",\"Normal\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3475376\"\n\"SRR3475377\",\"Normal\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3475377\"\n\"SRR3475379\",\"Normal\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3475379\"\n\"SRR3475375\",\"Normal\",\"$RNA_HOME/expression_mydata/stringtie_mydata/ref_only_mydata/SRR3475375\"\n"> LUAD_vs_Normal.csv
+
+cat LUAD_vs_Normal.csv
+
+
+#Next, please run the R commands detailed in the first R script.
+#What does the raw output from Ballgown look like?
+head LUAD_vs_Normal_gene_results.tsv
+
+#How many genes are there on this data set?
+grep -v feature LUAD_vs_Normal_gene_results.tsv | wc -l
+
+#How many passed filter in LUAD_vs_Normal?
+grep -v feature LUAD_vs_Normal_gene_results_filtered.tsv | wc -l
+
+#How many differentially expressed genes were found on this dataset (p-value < 0.01)?
+grep -v feature LUAD_vs_Normal_gene_results_sig.tsv | wc -l
+
+
+#Display the top 20 DE genes. Look at some of those genes in IGV - do they make sense?
+
+grep -v feature LUAD_vs_Normal_gene_results_sig.tsv | sort -rnk 3 | head -n 20 > sig20_LUAD.txt
+grep -v feature LUAD_vs_Normal_gene_results_sig.tsv | sort -nk 3 | head -n 20  > sig20_Normal.txt
+
+#Save all genes with P<0.01 to a new file.
+
+grep -v feature LUAD_vs_Normal_gene_results_sig.tsv | cut -f 6 | sed 's/\"//g' > DE_genes.txt
+head DE_genes.txt
+
+#edgeR
+#edgeR is a bioconductor package designed specifically for differential expression of count-based RNA-seq data
+#This is an alternative to using stringtie/ballgown to find differentially expressed genes
+#(/media/data01/deniz/workspace/rnaseq/de_mydata/htseq_counts)
+
+#Create a mapping file to go from ENSG IDs (which htseq-count output) to Symbols:
+
+perl -ne 'if ($_ =~ /gene_id\s\"(ENSG\S+)\"\;/) { $id = $1; $name = undef; if ($_ =~ /gene_name\s\"(\S+)"\;/) { $name = $1; }; }; if ($id && $name) {print "$id\t$name\n";} if ($_=~/gene_id\s\"(ERCC\S+)\"/){print "$1\t$1\n";}' $RNA_REF_MY_DATA_GTF | sort | uniq > ENSG_ID2Name.txt
+head ENSG_ID2Name.txt
+
+#Determine the number of unique Ensembl Gene IDs and symbols. What does this tell you?
+
+cut -f 1 ENSG_ID2Name.txt | sort | uniq | wc
+cut -f 2 ENSG_ID2Name.txt | sort | uniq | wc
+cut -f 2 ENSG_ID2Name.txt | sort | uniq -c | sort -r | head
+
+#Next, please launch R for edgeR analysis
+
+#Once you have run the edgeR tutorial, compare the sigDE genes to those saved earlier from cuffdiff:
+
+cat $RNA_HOME/de_mydata/ballgown/ref_only/DE_genes.txt
+wc -l $RNA_HOME/de_mydata/ballgown/ref_only/DE_genes.txt
+#4086 /media/data01/deniz/workspace/rnaseq/de_mydata/ballgown/ref_only/DE_genes.txt
+
+cat $RNA_HOME/de_mydata/htseq_counts/DE_genes_LUAD.txt
+wc -l $RNA_HOME/de_mydata/htseq_counts/DE_genes_LUAD.txt
+#4004 /media/data01/deniz/workspace/rnaseq/de_mydata/htseq_counts/DE_genes_LUAD.txt
+
+
+#Pull out the gene IDs
+
+cd $RNA_HOME/de_mydata/
+
+cut -f 1 $RNA_HOME/de_mydata/ballgown/ref_only/DE_genes.txt | sort  > ballgown_DE_gene_symbols.txt
+cut -f 2 $RNA_HOME/de_mydata/htseq_counts/DE_genes_LUAD.txt | sort | uniq | grep -v Gene_Name > htseq_counts_edgeR_DE_gene_symbols.txt
+
+
+#DE Visualization
+cd $RNA_HOME/de_mydata/ballgown/ref_only
+#Please launch R for DE Visualization
+
+#RNAseqmut
+cd $RNA_HOME/student_tools
+git clone https://github.com/davidliwei/rnaseqmut/
+cd rnaseqmut/demo/data
+#Copy .bam and .bai files
+cp $RNA_ALIGN_DIR/*.bam $RNA_HOME/student_tools/rnaseqmut/demo/data
+#check out the sam files
+for i in $(ls $RNA_HOME/alignments/hisat2/*.sam ) 
+do
+echo item:$i
+done
+
+#check out the sam file headers
+for i in $(ls $RNA_HOME/alignments/hisat2/*_*.sam  | tr -s '/.' ' ' | awk '{print $(NF-1)}') 
+do
+echo item:$i
+done
+#create bam files from the sam files and index to create the bai files
+for i in $(ls $RNA_HOME/alignments/hisat2/*_*.sam  | tr -s '/.' ' ' | awk '{print $(NF-1)}') 
+do
+samtools sort $RNA_HOME/alignments/hisat2/$i.sam > $i.bam
+samtools index $i.bam
+echo indexing of $i finished
+done
+#modify rnaseqmut shell script with our own normal and cancer file names
+#modify depth from 10 to 5
+nano rnaseqmut/demo/rundemo.sh
+#run rnaseqmut on the bam files and produce the filtered snps (vcf files)
+cd rnaseqmut/demo
+./rundemo.sh
+
+#take a look at the found variations
+nano results_mydata/ALLMUT_FILTERED.vcf
+
+#annotate your vcf using Annovar
+grep -n chrom ALLMUT_FILTERED.vcf
+wc -l ALLMUT_FILTERED.vcf 
+# tail -n the number of lines after #chrom  or grep -v '#' ALLMUT_FILTERED.vcf
+
+awk '{FS="\t";print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6"\t.\t"$7}' ./ALLMUT_FILTERED.vcf | tail -7200  > ./ALLMUT_FILTERED.filtercoladded_3.vcf
+
+scp deniz@bioinfo05:/media/data01/deniz/workspace/rnaseq/student_tools/rnaseqmut/demo/results_mydata/ALLMUT_FILTERED.filtercoladded_3.vcf .
+
+
+#for annovar, first download a few annotation databases
+cd $RNA_HOME/annovar
+
+cd humandb
+wget http://www.openbioinformatics.org/annovar/download/hg38_refGeneMrna.fa.gz
+gzip -d hg38_refGeneMrna.fa.gz
+
+perl annotate_variation.pl -buildver hg38 -downdb -webfrom annovar refGene humandb/
+perl annotate_variation.pl -buildver hg38 -downdb cytoBand humandb/
+perl annotate_variation.pl -buildver hg38 -downdb genomicSuperDups humandb/ 
+perl annotate_variation.pl -buildver hg38 -downdb -webfrom annovar esp6500siv2_all humandb/
+perl annotate_variation.pl -buildver hg38 -downdb -webfrom annovar 1000g2015aug humandb/
+perl annotate_variation.pl -buildver hg38 -downdb -webfrom annovar exac03 humandb/ 
+perl annotate_variation.pl -buildver hg38 -downdb -webfrom annovar avsnp150 humandb/ 
+perl annotate_variation.pl -buildver hg38 -downdb -webfrom annovar dbnsfp30a humandb/
+perl annotate_variation.pl -buildver hg38 -downdb -webfrom annovar clinvar_20200316 humandb/
+perl annotate_variation.pl -buildver hg38 -downdb -webfrom annovar cosmic70 humandb/
+cd $RNA_HOME/annovar
+
+#run annovar on thevariants we found to check if they exist in any of the databases
+perl table_annovar.pl  ../student_tools/rnaseqmut/demo/results_mydata/ALLMUT_FILTERED.filtercoladded_3.vcf humandb/ -buildver hg38 -out myannoDeniz -remove -protocol refGene,cytoBand,genomicSuperDups,esp6500siv2_all,1000g2015aug_all,1000g2015aug_eur,exac03,avsnp150,dbnsfp30a,cosmic70,clinvar_20200316 -operation g,r,r,f,f,f,f,f,f,f,f -nastring . -vcfinput
+
+cd $RNA_HOME/annovar
+cd humandb
+wget http://www.openbioinformatics.org/annovar/download/hg38_refGeneMrna.fa.gz
+gzip -d hg38_refGeneMrna.fa.gz
+
+cp myannoDeniz.hg38_multianno.txt myanno.hg38_multianno.tsv
+scp deniz@bioinfo05:/media/data01/deniz/workspace/rnaseq/annovar/myanno.hg38_multianno.tsv .
+
+
+#DEGs GSEA
+wget http://eng1.mu.edu.tr/~tugba/SeqAnalysis/c6.all.v7.1.entrez.gmt 
+wget http://eng1.mu.edu.tr/~tugba/SeqAnalysis/c7.all.v7.1.entrez.gmt
+
+#For human data sets, on Linux shell, in R, please use the following enrichment code :
+
+
+
+#ANNOVAR GSEA
+wget http://eng1.mu.edu.tr/~tugba/SeqAnalysis/c6.all.v7.1.entrez.gmt 
+wget http://eng1.mu.edu.tr/~tugba/SeqAnalysis/c7.all.v7.1.entrez.gmt
+
+#For human data sets, on Linux shell, in R, please use the following enrichment code :
+
+
+#Visualization of Gene Set Enrichment Analysis of Differentially Expressed Genes with ClusterProfiler
+cd $RNA_HOME/de_mydata/ballgown/ref_only
+cp LUAD_vs_Normal_gene_results_sig.tsv LUAD_vs_Normal_gene_results_sig.csv
+
+#https://learn.gencore.bio.nyu.edu/rna-seq-analysis/gene-set-enrichment-analysis/
+#Data:CSV file containing a list of gene names and log2 fold change values. 
+#Launch R
+
+
+
+
+
+
+
